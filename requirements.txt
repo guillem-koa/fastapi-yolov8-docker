@@ -5,3 +5,4 @@ fastapi[all]==0.89.1
 loguru
 pytest
 pytest-cov
+SQLAlchemy==2.0.19
