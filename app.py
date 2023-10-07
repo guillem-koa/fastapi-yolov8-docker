@@ -148,3 +148,54 @@ def detect_sample_model(input_image: Image) -> pd.DataFrame:
         conf=0.5,
     )
     return predict
+
+
+##################### Functions for PESCANOVAMICRO
+
+def get_positions(circles, num_rows, num_cols):
+    import numpy as np
+    from sklearn.cluster import KMeans
+
+    # Location algorithm for desired pocillo    
+    x_kmeans = KMeans(n_clusters=num_cols, n_init=num_cols-1).fit(circles[:,0].reshape(-1, 1))
+    x_labels, x_centers = x_kmeans.labels_, x_kmeans.cluster_centers_.squeeze()
+    
+    x_new_labels = np.zeros_like(x_labels)
+    for i in range(len(x_centers)):
+        x_new_labels[x_labels == i] = np.where(np.argsort(x_centers) == i)[0][0] 
+
+    y_kmeans = KMeans(n_clusters=num_rows, n_init=num_rows-1).fit(circles[:,1].reshape(-1, 1))
+    y_labels, y_centers = y_kmeans.labels_, y_kmeans.cluster_centers_.squeeze()
+    
+    y_new_labels = np.zeros_like(y_labels)
+    for i in range(len(y_centers)):
+        y_new_labels[y_labels == i] = np.where(np.argsort(y_centers) == i)[0][0]
+        
+    # Output is a dataframe where each row corresponds to a different circle.
+    # We give coordinates of center, value of radius, row number and column number (in the grid)
+    
+    return np.column_stack((circles, y_new_labels+1,  x_new_labels+1))
+
+
+# Get dictiionary with count of pathogens on a YOLO result
+def get_path_dict(results):
+    names = results[0].names
+    number_colonies = np.zeros((len(names)), dtype = int)
+    for i in range(0, len(results[0])):
+        box = results[0].boxes[i]
+        class_id = int(box.cls[0].item())
+        number_colonies[class_id] = number_colonies[class_id] + 1
+
+    counting = {}
+    for i in range(0, len(names)):
+        bacteria_name = names.get(i)
+        counting[bacteria_name] = int(number_colonies[i])
+
+    return counting
+
+# Combines three agars to give one unique prediction on vibrio/staphylo
+def get_row_pred(Row):
+    row_pred = {'vibrios': Row[0]['valgino'] + Row[0]['vangil'] + Row[0]['vharveyi'],
+     'staphylos': Row[0]['sinniae']}
+    
+    return row_pred

@@ -1,22 +1,33 @@
 ####################################### IMPORT #################################
 import json
 import pandas as pd
+import numpy as np
 from PIL import Image
 from loguru import logger
 import sys
+from io import BytesIO
 
-from fastapi import FastAPI, File, status
+from fastapi import FastAPI, File, status, Depends
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException
 
-from io import BytesIO
+from database import engine, SessionLocal
+import models
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app import get_image_from_bytes
 from app import detect_sample_model
 from app import add_bboxs_on_img
 from app import get_bytes_from_image
+
+from app import get_positions
+from app import get_path_dict
+from app import get_row_pred
+
+from ultralytics import YOLO
 
 ####################################### logger #################################
 
@@ -33,10 +44,9 @@ logger.add("log.log", rotation="1 MB", level="DEBUG", compression="zip")
 
 # title
 app = FastAPI(
-    title="Object Detection FastAPI Template",
-    description="""Obtain object value out of image
-                    and return image and json result""",
-    version="2023.1.31",
+    title="KOA-api",
+    description="""Obtain colonies out of images and return image and json result""",
+    version="2023.9.22",
 )
 
 # This function is needed if you want to allow client requests 
@@ -56,6 +66,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+## Add database
+models.Base.metadata.create_all(bind=engine)
+
+def get_db():
+    try:
+        db = SessionLocal()
+        yield db
+    finally:
+        db.close()    
+
+''' 
+class Prediction(BaseModel):
+    id: int = Field(gt=-1)
+    valgino: int =  Field(gt=-1)
+    vanguil: int =  Field(gt=-1)
+    vharveyi: int =  Field(gt=-1)
+
+PREDICTIONS = []
+'''
 
 @app.on_event("startup")
 def save_openapi_json():
@@ -177,3 +207,98 @@ def img_object_detection_to_img(file: bytes = File(...)):
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
+@app.post("/pescanova_micro")
+def pescanova_micro(plate_id: str, 
+                 date: str, 
+                 time: str, 
+                 file: bytes = File(...), 
+                 db: Session = Depends(get_db)):
+    
+    # Get image from bytes
+    input_image = get_image_from_bytes(file)
+
+    modelAgarsWells = YOLO('models/sample_model/model_agars_wells.pt')
+    resultsAgars = modelAgarsWells(input_image)[0]
+    allBoxes = resultsAgars.boxes.xyxy.numpy().astype(int)
+
+    agarsPositions = get_positions(allBoxes[:, 0:2], 2, 3)
+    # Sort the array first by the last column (index 3), then by the one before column (index 2)
+    sorted_indices = np.lexsort((agarsPositions[:, 3], agarsPositions[:, 2]))
+    # Here sorting is top-down, and left-right, so like:
+    # 1 2 3
+    # 4 5 6 
+    allBoxesSorted = allBoxes[sorted_indices]
+
+    # Perform pathogen prediction on all the agars
+    modelColonies = YOLO('models/sample_model/model_all_augment.pt')
+    pred_on_all_agars = []
+    for box in allBoxesSorted:
+        agarCrop = input_image.crop((box[0], box[1], box[2], box[3]))
+        #agarCrop = input_image[box[1]:box[3], box[0]:box[2]]
+        results = modelColonies(agarCrop)         # Colonies prediction on agarCrop
+        path_dict = get_path_dict(results)        # Get count of each pathogen type
+        pred_on_all_agars.append(path_dict)       # Append global list
+
+    # Prediction on rows only sees two pathogen classes: vibrio, staphylo (& none)
+    # Split pred_on_all_agars on two lists (one for each row)
+    upperRow, lowerRow = pred_on_all_agars[0:3],  pred_on_all_agars[3:6]
+    pred_on_rows = {'upperRow': get_row_pred(upperRow),'lowerRow': get_row_pred(lowerRow)}
+
+    # Writing on database    
+    predictions_model = models.Predictions()
+
+    predictions_model.plate_id = plate_id
+    predictions_model.date = date
+    predictions_model.time = time
+
+    predictions_model.upperRowVibrios = pred_on_rows['upperRow']['vibrios']
+    predictions_model.upperRowStaphylos = pred_on_rows['upperRow']['staphylos']
+    predictions_model.lowerRowVibrios = pred_on_rows['lowerRow']['vibrios']
+    predictions_model.lowerRowStaphylos = pred_on_rows['lowerRow']['staphylos']
+
+    db.add(predictions_model)
+    db.commit()
+
+    # Would be nice to print the response
+    import cv2
+    img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
+    return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
+
+
+@app.get("/get_machine_variables")
+async def get_machine_variables():
+    import mysql.connector
+
+    # Replace with your MySQL connection details
+    host =  'sql.freedb.tech' 
+    username = 'freedb_guille_koa'
+    password = 'dv$6!!SerhhESJw'
+    database_name =  'freedb_KOAMachines'
+
+    # Create a connection to the MySQL server
+    db_connection = mysql.connector.connect(
+        host=host,
+        user=username,
+        password=password,
+        database=database_name
+    )
+
+    # Create a cursor to execute SQL commands
+    cursor = db_connection.cursor(dictionary=True)
+
+    try:
+        # Query the full table
+        query = "SELECT * FROM estat"
+        cursor.execute(query)
+
+        # Fetch all rows
+        data = cursor.fetchall()
+        cursor.close()
+
+        return data
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+    finally:
+        db_connection.close()
