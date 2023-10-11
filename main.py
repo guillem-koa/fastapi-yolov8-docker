@@ -7,7 +7,7 @@ from loguru import logger
 import sys
 from io import BytesIO
 
-from fastapi import FastAPI, File, status, Depends
+from fastapi import FastAPI, File, status, Depends, Query
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -264,9 +264,15 @@ def pescanova_micro(plate_id: str,
     img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
     return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
+from enum import Enum
+class TopicEnum(str, Enum):
+    configuracio = 'configuracio'
+    estat = 'estat'
+    maquina = 'maquina'
+    experiment = 'experiment'
 
 @app.get("/get_machine_variables")
-async def get_machine_variables():
+async def get_machine_variables(topic: TopicEnum = Query(..., description="Select a topic")):
     import mysql.connector
 
     # Replace with your MySQL connection details
@@ -288,7 +294,7 @@ async def get_machine_variables():
 
     try:
         # Query the full table
-        query = "SELECT * FROM estat"
+        query = f"SELECT * FROM {topic}"
         cursor.execute(query)
 
         # Fetch all rows
