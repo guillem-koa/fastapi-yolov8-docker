@@ -7,3 +7,4 @@ pytest
 pytest-cov
 SQLAlchemy==2.0.19
 mysql-connector-python==8.0.33
+pandas
