@@ -276,10 +276,10 @@ async def get_machine_variables(topic: TopicEnum = Query(..., description="Selec
     import mysql.connector
 
     # Replace with your MySQL connection details
-    host =  'sql.freedb.tech' 
-    username = 'freedb_guille_koa'
-    password = 'dv$6!!SerhhESJw'
-    database_name =  'freedb_KOAMachines'
+    host =  '10.8.0.1'
+    username = 'pere'
+    password = 'Nemomola5'
+    database_name =  'KOAMachines'
 
     # Create a connection to the MySQL server
     db_connection = mysql.connector.connect(
