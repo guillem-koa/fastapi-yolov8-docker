@@ -264,15 +264,19 @@ def pescanova_micro(plate_id: str,
     img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
     return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
+# This creates necessary classes for the predefined query parameters for get_machine_variables
 from enum import Enum
-class TopicEnum(str, Enum):
+
+class Topic(str, Enum):
     configuracio = 'configuracio'
     estat = 'estat'
     maquina = 'maquina'
     experiment = 'experiment'
 
 @app.get("/get_machine_variables")
-async def get_machine_variables(topic: TopicEnum = Query(..., description="Select a topic")):
+async def get_machine_variables(topic: str = Query(..., description="Select a topic", enum = ['configuracio', 'estat', 'maquina', 'experiment']),
+                                range: str = Query('1', description = "Select a range in days", enum = ['1', '7', '30'])
+                                ):
     import mysql.connector
 
     # Replace with your MySQL connection details
@@ -293,8 +297,13 @@ async def get_machine_variables(topic: TopicEnum = Query(..., description="Selec
     cursor = db_connection.cursor(dictionary=True)
 
     try:
-        # Query the full table
-        query = f"SELECT * FROM {topic}"
+        if topic == 'estat':
+            # Query the full table with the specified range
+            query = f"SELECT * FROM {topic} WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY);"
+        else: 
+            # Query the full table (but range in days won't apply)
+            query = f"SELECT * FROM {topic}"
+
         cursor.execute(query)
 
         # Fetch all rows
