@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, JSON
 from database import Base
 
 
@@ -14,5 +14,7 @@ class Predictions(Base):
     upperRowStaphylos = Column(Integer)
     lowerRowVibrios = Column(Integer)
     lowerRowStaphylos = Column(Integer)
+
+    upperRowPred = Column(JSON)
 
 

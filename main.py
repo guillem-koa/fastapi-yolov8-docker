@@ -77,16 +77,6 @@ def get_db():
     finally:
         db.close()    
 
-''' 
-class Prediction(BaseModel):
-    id: int = Field(gt=-1)
-    valgino: int =  Field(gt=-1)
-    vanguil: int =  Field(gt=-1)
-    vharveyi: int =  Field(gt=-1)
-
-PREDICTIONS = []
-'''
-
 @app.on_event("startup")
 def save_openapi_json():
     '''This function is used to save the OpenAPI documentation 
@@ -207,8 +197,8 @@ def img_object_detection_to_img(file: bytes = File(...)):
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
-@app.post("/pescanova_micro")
-def pescanova_micro(plate_id: str, 
+@app.post("/aquagar_predict")
+def aquagar_predict(plate_id: str, 
                  date: str, 
                  time: str, 
                  file: bytes = File(...), 
@@ -256,6 +246,8 @@ def pescanova_micro(plate_id: str,
     predictions_model.lowerRowVibrios = pred_on_rows['lowerRow']['vibrios']
     predictions_model.lowerRowStaphylos = pred_on_rows['lowerRow']['staphylos']
 
+    predictions_model.upperRowPred = upperRow[0]
+    
     db.add(predictions_model)
     db.commit()
 
@@ -263,18 +255,53 @@ def pescanova_micro(plate_id: str,
     import cv2
     img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
     return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
+    #return upperRow
 
-# This creates necessary classes for the predefined query parameters for get_machine_variables
-from enum import Enum
+@app.post('/aquagar_predict_mariadb')
+async def aquagar_predict_mariadb(plate_id: str, 
+                 date: str, 
+                 time: str, 
+                 serial_num: str,
+                 file: bytes = File(...)):
+    import mysql.connector
+    # Replace with your MySQL connection details
+    host =  '10.8.0.1'
+    username = 'pere'
+    password = 'Nemomola5'
+    database_name =  'KOAPredictions'
 
-class Topic(str, Enum):
-    configuracio = 'configuracio'
-    estat = 'estat'
-    maquina = 'maquina'
-    experiment = 'experiment'
+    # Create a connection to the MySQL server
+    db_connection = mysql.connector.connect(
+        host=host,
+        user=username,
+        password=password,
+        database=database_name
+    )
+
+    # Create a cursor to execute SQL commands
+    cursor = db_connection.cursor()
+
+    import json
+    test_pred_sample = {'assalmonicida': 0, 'pddamselae': 0, 'pdpiscicida': 0, 'sinniae': 0}
+    test_pred_sample = json.dumps(test_pred_sample)
+
+    try: 
+        #query = """INSERT INTO aquagar VALUES ("2","1","1","1","1","1","1")"""
+        query = """INSERT INTO aquagar VALUES (%s, %s, %s, %s, %s, %s, %s);""", tuple([str(plate_id), str(date) + str(time), '1', '1' , '1', '1', str(serial_num)]) 
+        query = "INSERT INTO aquagar (PLATE_ID, TIME_STAMP, ROW, PRED_BA, PRED_TCBS, PRED_MSA, SERIAL_NUM) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+        values = (plate_id, date + ' ' + time, '1', test_pred_sample , test_pred_sample , test_pred_sample, serial_num) 
+        cursor.execute(query, values)
+        db_connection.commit()
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+    finally:
+        db_connection.close()
 
 @app.get("/get_machine_variables")
 async def get_machine_variables(topic: str = Query(..., description="Select a topic", enum = ['configuracio', 'estat', 'maquina', 'experiment']),
+                                id_maquina: str = Query(..., description="Select a machine_id", enum = ['1','2','3']),
                                 range: str = Query('1', description = "Select a range in days", enum = ['1', '7', '30'])
                                 ):
     import mysql.connector
@@ -299,10 +326,10 @@ async def get_machine_variables(topic: str = Query(..., description="Select a to
     try:
         if topic == 'estat':
             # Query the full table with the specified range
-            query = f"SELECT * FROM {topic} WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY);"
+            query = f"SELECT * FROM {topic} WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY) AND id_maquina = {id_maquina};"
         else: 
             # Query the full table (but range in days won't apply)
-            query = f"SELECT * FROM {topic}"
+            query = f"SELECT * FROM {topic} WHERE id_maquina = {id_maquina}"
 
         cursor.execute(query)
 

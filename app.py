@@ -196,6 +196,6 @@ def get_path_dict(results):
 # Combines three agars to give one unique prediction on vibrio/staphylo
 def get_row_pred(Row):
     row_pred = {'vibrios': Row[0]['valgino'] + Row[0]['vangil'] + Row[0]['vharveyi'],
-     'staphylos': Row[0]['sinniae']}
+                'staphylos': Row[0]['sinniae']}
     
     return row_pred
