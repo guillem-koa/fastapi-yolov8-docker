@@ -262,6 +262,7 @@ async def aquagar_predict_mariadb(plate_id: str,
                  date: str, 
                  time: str, 
                  serial_num: str,
+                 id_maquina: int,
                  file: bytes = File(...)):
     import mysql.connector
     # Replace with your MySQL connection details
@@ -288,8 +289,8 @@ async def aquagar_predict_mariadb(plate_id: str,
     try: 
         #query = """INSERT INTO aquagar VALUES ("2","1","1","1","1","1","1")"""
         query = """INSERT INTO aquagar VALUES (%s, %s, %s, %s, %s, %s, %s);""", tuple([str(plate_id), str(date) + str(time), '1', '1' , '1', '1', str(serial_num)]) 
-        query = "INSERT INTO aquagar (PLATE_ID, TIME_STAMP, ROW, PRED_BA, PRED_TCBS, PRED_MSA, SERIAL_NUM) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-        values = (plate_id, date + ' ' + time, '1', test_pred_sample , test_pred_sample , test_pred_sample, serial_num) 
+        query = "INSERT INTO aquagar (PLATE_ID, TIME_STAMP, ROW, PRED_BA, PRED_TCBS, PRED_MSA, SERIAL_NUM, id_maquina) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        values = (plate_id, date + ' ' + time, '1', test_pred_sample , test_pred_sample , test_pred_sample, serial_num, id_maquina) 
         cursor.execute(query, values)
         db_connection.commit()
 
