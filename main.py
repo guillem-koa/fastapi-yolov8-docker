@@ -300,6 +300,48 @@ async def aquagar_predict_mariadb(plate_id: str,
     finally:
         db_connection.close()
 
+@app.get("/get_machine_predictions")
+async def get_machine_predictions(id_maquina: str = Query(..., description="Select a machine_id", enum = ['1','2','3']),
+                                  range: str = Query('1', description = "Select a range in days", enum = ['1', '7', '30']),
+                                  ):
+    import mysql.connector
+
+    # Replace with your MySQL connection details
+    host =  '10.8.0.1'
+    username = 'pere'
+    password = 'Nemomola5'
+    database_name =  'KOAPredictions'
+
+    # Create a connection to the MySQL server
+    db_connection = mysql.connector.connect(
+        host=host,
+        user=username,
+        password=password,
+        database=database_name
+    )
+
+    # Create a cursor to execute SQL commands
+    cursor = db_connection.cursor(dictionary=True)
+
+    try:
+        # Query the full table with the specified range
+        query = f"SELECT * FROM aquagar WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY) AND id_maquina = {id_maquina};"
+
+        cursor.execute(query)
+
+        # Fetch all rows
+        data = cursor.fetchall()
+        cursor.close()
+
+        return data
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+    finally:
+        db_connection.close()
+    
+
 @app.get("/get_machine_variables")
 async def get_machine_variables(topic: str = Query(..., description="Select a topic", enum = ['configuracio', 'estat', 'maquina', 'experiment']),
                                 id_maquina: str = Query(..., description="Select a machine_id", enum = ['1','2','3']),
