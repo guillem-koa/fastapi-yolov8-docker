@@ -197,17 +197,17 @@ def img_object_detection_to_img(file: bytes = File(...)):
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
-@app.post("/aquagar_predict")
-def aquagar_predict(plate_id: str, 
-                 date: str, 
-                 time: str, 
-                 file: bytes = File(...), 
-                 db: Session = Depends(get_db)):
+@app.post('/aquagar_predict_mariadb')
+async def aquagar_predict_mariadb(plate_id: str, 
+                 timestamp: str, 
+                 serial_num: str,
+                 file: bytes = File(...)):
     
     # Get image from bytes
     input_image = get_image_from_bytes(file)
 
     modelAgarsWells = YOLO('models/sample_model/model_agars_wells.pt')
+
     resultsAgars = modelAgarsWells(input_image)[0]
     allBoxes = resultsAgars.boxes.xyxy.numpy().astype(int)
 
@@ -225,46 +225,24 @@ def aquagar_predict(plate_id: str,
     for box in allBoxesSorted:
         agarCrop = input_image.crop((box[0], box[1], box[2], box[3]))
         #agarCrop = input_image[box[1]:box[3], box[0]:box[2]]
-        results = modelColonies(agarCrop)         # Colonies prediction on agarCrop
+        results = modelColonies.predict(agarCrop, conf = .6)
+         # Colonies prediction on agarCrop
         path_dict = get_path_dict(results)        # Get count of each pathogen type
         pred_on_all_agars.append(path_dict)       # Append global list
 
-    # Prediction on rows only sees two pathogen classes: vibrio, staphylo (& none)
-    # Split pred_on_all_agars on two lists (one for each row)
-    upperRow, lowerRow = pred_on_all_agars[0:3],  pred_on_all_agars[3:6]
-    pred_on_rows = {'upperRow': get_row_pred(upperRow),'lowerRow': get_row_pred(lowerRow)}
+    if len(pred_on_all_agars)==6:
+        # The official column order for agars is: TCBS - MSA - BA
+        upperRowTCBS, upperRowMSA, upperRowBA, lowerRowTCBS, lowerRowMSA, lowerRowBA= pred_on_all_agars[0], pred_on_all_agars[1], pred_on_all_agars[2], pred_on_all_agars[3], pred_on_all_agars[4], pred_on_all_agars[5]
 
-    # Writing on database    
-    predictions_model = models.Predictions()
-
-    predictions_model.plate_id = plate_id
-    predictions_model.date = date
-    predictions_model.time = time
-
-    predictions_model.upperRowVibrios = pred_on_rows['upperRow']['vibrios']
-    predictions_model.upperRowStaphylos = pred_on_rows['upperRow']['staphylos']
-    predictions_model.lowerRowVibrios = pred_on_rows['lowerRow']['vibrios']
-    predictions_model.lowerRowStaphylos = pred_on_rows['lowerRow']['staphylos']
-
-    predictions_model.upperRowPred = upperRow[0]
+        # After **some logic** we get to a final prediction
+        upperRowPred, lowerRowPred = upperRowBA, lowerRowBA
     
-    db.add(predictions_model)
-    db.commit()
-
-    # Would be nice to print the response
-    import cv2
-    img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
-    return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
-    #return upperRow
-
-@app.post('/aquagar_predict_mariadb')
-async def aquagar_predict_mariadb(plate_id: str, 
-                 date: str, 
-                 time: str, 
-                 serial_num: str,
-                 id_maquina: int,
-                 file: bytes = File(...)):
+    else:
+        upperRowTCBS, upperRowMSA, upperRowBA, lowerRowTCBS, lowerRowMSA, lowerRowBA, upperRowPred, lowerRowPred = {}, {}, {}, {}, {}, {}, {}, {} 
+    
     import mysql.connector
+    import json
+
     # Replace with your MySQL connection details
     host =  '10.8.0.1'
     username = 'pere'
@@ -282,16 +260,38 @@ async def aquagar_predict_mariadb(plate_id: str,
     # Create a cursor to execute SQL commands
     cursor = db_connection.cursor()
 
-    import json
-    test_pred_sample = {'assalmonicida': 0, 'pddamselae': 0, 'pdpiscicida': 0, 'sinniae': 0}
-    test_pred_sample = json.dumps(test_pred_sample)
+    #test_pred_sample = {'assalmonicida': 0, 'pddamselae': 0, 'pdpiscicida': 0, 'sinniae': 0}
+    #test_pred_sample = json.dumps(test_pred_sample)
 
     try: 
-        #query = """INSERT INTO aquagar VALUES ("2","1","1","1","1","1","1")"""
-        query = """INSERT INTO aquagar VALUES (%s, %s, %s, %s, %s, %s, %s);""", tuple([str(plate_id), str(date) + str(time), '1', '1' , '1', '1', str(serial_num)]) 
-        query = "INSERT INTO aquagar (PLATE_ID, TIME_STAMP, ROW, PRED_BA, PRED_TCBS, PRED_MSA, SERIAL_NUM, id_maquina) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-        values = (plate_id, date + ' ' + time, '1', test_pred_sample , test_pred_sample , test_pred_sample, serial_num, id_maquina) 
+        # Common query for inserting predictions into MariaDB
+        ''' 
+        query = """
+                INSERT INTO aquagar (id_maquina, PLATE_ID, TIME_STAMP, ROW,PRED_TCBS, PRED_MSA, PRED_BA, PRED, SERIAL_NUM)
+                SELECT
+                    maquina.id AS id_maquina,
+                    %s AS PLATE_ID,
+                    %s AS TIME_STAMP,
+                    %s AS ROW,
+                    %s AS PRED_TCBS,
+                    %s AS PRED_MSA,
+                    %s AS PRED_BA,
+                    %s AS PRED,
+                FROM maquina
+                WHERE maquina.NUM_SERIE = %s
+            """
+        '''
+
+        query = "INSERT INTO aquagar (PLATE_ID, TIME_STAMP, ROW,PRED_TCBS, PRED_MSA, PRED_BA, PRED, SERIAL_NUM) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        
+        # ROW 1: Inserting predictions
+        values = (plate_id,  timestamp , '1', json.dumps(upperRowTCBS), json.dumps(upperRowMSA), json.dumps(upperRowBA), json.dumps(upperRowPred), serial_num) 
         cursor.execute(query, values)
+
+        # ROW 2:  Inserting predictions
+        values = (plate_id,  timestamp , '2', json.dumps(lowerRowTCBS), json.dumps(lowerRowMSA), json.dumps(lowerRowBA), json.dumps(lowerRowPred), serial_num) 
+        cursor.execute(query, values)
+
         db_connection.commit()
 
     except mysql.connector.Error as err:
@@ -299,6 +299,11 @@ async def aquagar_predict_mariadb(plate_id: str,
 
     finally:
         db_connection.close()
+
+    # Would be nice to print the response
+    import cv2
+    img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
+    return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
 @app.get("/get_machine_predictions")
 async def get_machine_predictions(id_maquina: str = Query(..., description="Select a machine_id", enum = ['1','2','3']),
@@ -340,6 +345,7 @@ async def get_machine_predictions(id_maquina: str = Query(..., description="Sele
 
     finally:
         db_connection.close()
+
     
 
 @app.get("/get_machine_variables")

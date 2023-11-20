@@ -150,7 +150,7 @@ def detect_sample_model(input_image: Image) -> pd.DataFrame:
     return predict
 
 
-##################### Functions for PESCANOVAMICRO
+##################### Functions for AQUAGAR ###############
 
 def get_positions(circles, num_rows, num_cols):
     import numpy as np
@@ -181,6 +181,7 @@ def get_positions(circles, num_rows, num_cols):
 def get_path_dict(results):
     names = results[0].names
     number_colonies = np.zeros((len(names)), dtype = int)
+    
     for i in range(0, len(results[0])):
         box = results[0].boxes[i]
         class_id = int(box.cls[0].item())
