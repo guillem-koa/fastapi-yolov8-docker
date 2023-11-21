@@ -198,10 +198,12 @@ def img_object_detection_to_img(file: bytes = File(...)):
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
 @app.post('/aquagar_predict_mariadb')
-async def aquagar_predict_mariadb(plate_id: str, 
-                 timestamp: str, 
+async def aquagar_predict_mariadb(timestamp: str, 
                  serial_num: str,
                  file: bytes = File(...)):
+    
+    # ATENTION: this step will need some coding. The plate_id is supposed to be read from the picture!
+    plate_id = 'XXXX' 
     
     # Get image from bytes
     input_image = get_image_from_bytes(file)
