@@ -152,6 +152,44 @@ def detect_sample_model(input_image: Image) -> pd.DataFrame:
 
 ##################### Functions for AQUAGAR ###############
 
+def get_plateid_from_image(img, expected_digits):
+    from ultralytics import YOLO
+    import cv2
+    import easyocr
+
+    model_path = 'models/sample_model/detect-plateid.pt'
+    model = YOLO(model_path)
+
+    results = model(img, conf = 0.014, iou = 0.7)
+
+    if results[0].boxes:
+        # Assuming len(results)==1
+        print(results)
+        box = results[0].boxes.xyxy.numpy().astype(int)[0]
+        crop = img.crop((box[0], box[1], box[2], box[3]))
+        # img[box[1]:box[3], box[0]:box[2]]
+        rotatedCrop = np.rot90(crop, k=-1)
+
+        # Initialize the EasyOCR reader
+        reader = easyocr.Reader(['en'])
+
+        # Perform OCR (only look for NUMERICAL digits)
+        ocr_results = reader.readtext(rotatedCrop)
+        numerical_characters = ''.join([entry[1] for entry in ocr_results if entry[1].isdigit()])
+
+        # The desired output should have 
+        if len(numerical_characters)==expected_digits:
+            return numerical_characters
+        else:
+            return 'Non-readable'
+            console.log('Unable to extract plate_id')
+    else: 
+        return 'Non-detected'
+    
+
+
+
+
 def get_positions(circles, num_rows, num_cols):
     import numpy as np
     from sklearn.cluster import KMeans
@@ -193,10 +231,3 @@ def get_path_dict(results):
         counting[bacteria_name] = int(number_colonies[i])
 
     return counting
-
-# Combines three agars to give one unique prediction on vibrio/staphylo
-def get_row_pred(Row):
-    row_pred = {'vibrios': Row[0]['valgino'] + Row[0]['vangil'] + Row[0]['vharveyi'],
-                'staphylos': Row[0]['sinniae']}
-    
-    return row_pred
