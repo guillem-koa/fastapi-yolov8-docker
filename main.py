@@ -97,6 +97,7 @@ async def redirect():
     return RedirectResponse("/docs")
 
 
+""" 
 @app.get('/healthcheck', status_code=status.HTTP_200_OK)
 def perform_healthcheck():
     '''
@@ -111,7 +112,7 @@ def perform_healthcheck():
     }
     '''
     return {'healthcheck': 'Everything OK!'}
-
+"""
 
 ######################### Support Func #################################
 
@@ -211,7 +212,7 @@ async def aquagar_predict_mariadb(timestamp: str,
     print(plate_id)
 
     # Locate each agar (to crop later and perform pathogen prediction on each crop!)
-    modelAgarsWells = YOLO('models/sample_model/model_agars_wells.pt')
+    modelAgarsWells = YOLO('models/model_agars_wells.pt')
 
     resultsAgars = modelAgarsWells(input_image)[0]
     allBoxes = resultsAgars.boxes.xyxy.numpy().astype(int)
@@ -225,12 +226,12 @@ async def aquagar_predict_mariadb(timestamp: str,
     allBoxesSorted = allBoxes[sorted_indices]
 
     # Perform pathogen prediction on all the agars
-    modelColonies = YOLO('models/sample_model/model_all_augment.pt')
+    modelColonies = YOLO('models/micro_colony_counting.pt')
     pred_on_all_agars = []
     for box in allBoxesSorted:
         agarCrop = input_image.crop((box[0], box[1], box[2], box[3]))
         #agarCrop = input_image[box[1]:box[3], box[0]:box[2]]
-        results = modelColonies.predict(agarCrop, conf = .6)
+        results = modelColonies.predict(agarCrop, conf = .5)
          # Colonies prediction on agarCrop
         path_dict = get_path_dict(results)        # Get count of each pathogen type
         pred_on_all_agars.append(path_dict)       # Append global list

@@ -10,7 +10,7 @@ from ultralytics.yolo.utils.plotting import Annotator, colors
 
 
 # Initialize the models
-model_sample_model = YOLO("./models/sample_model/last.pt")
+model_sample_model = YOLO("./models/micro_colony_counting.pt")
 
 
 def get_image_from_bytes(binary_image: bytes) -> Image:
@@ -157,7 +157,7 @@ def get_plateid_from_image(img, expected_digits):
     import cv2
     import easyocr
 
-    model_path = 'models/sample_model/detect-plateid.pt'
+    model_path = 'models/detect-plateid.pt'
     model = YOLO(model_path)
 
     results = model(img, conf = 0.014, iou = 0.7)

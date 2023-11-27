@@ -38,7 +38,7 @@ def predictions():
     Fixture to return the predictions and label names for the test image.
     """
     input_image = Image.open('./tests/test_image.jpg').convert("RGB")
-    model = YOLO("./models/sample_model/yolov8n.pt")
+    model = YOLO("./models/yolov8n.pt")
     predictions = model.predict(source=input_image)
     return(predictions, model.model.names)
 
@@ -64,7 +64,7 @@ def test_initialize_models():
     """
     Test to check if all the models are loading correctly.
     """
-    model_sample_model = YOLO("./models/sample_model/yolov8n.pt")
+    model_sample_model = YOLO("./models/yolov8n.pt")
     assert model_sample_model is not None
 
 def test_transform_predict_to_df(predictions):
@@ -93,7 +93,7 @@ def test_get_model_predict(input_image):
     Test to check if the function 'get_model_predict' is returning a DataFrame object with the correct columns and number of rows.
     It also checks if the returned object is an instance of pd.DataFrame
     """
-    model_sample_model = YOLO("./models/sample_model/yolov8n.pt")
+    model_sample_model = YOLO("./models/yolov8n.pt")
     predictions = get_model_predict(model_sample_model, input_image)
     # Check if the returned object is an instance of pd.DataFrame
     assert isinstance(predictions, pd.DataFrame)
