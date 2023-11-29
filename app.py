@@ -145,7 +145,7 @@ def detect_sample_model(input_image: Image) -> pd.DataFrame:
         save=False,
         image_size=640,
         augment=False,
-        conf=0.5,
+        conf=0.1,
     )
     return predict
 
