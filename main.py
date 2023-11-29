@@ -198,6 +198,13 @@ def img_object_detection_to_img(file: bytes = File(...)):
     # return image in bytes format
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
+
+@app.post('/tests')
+async def tests(file: bytes = File(...)):
+    # Get image from bytes
+    input_image = get_image_from_bytes(file)
+    return StreamingResponse(content=get_bytes_from_image(input_image), media_type="image/jpeg")
+
 @app.post('/aquagar_predict_mariadb')
 async def aquagar_predict_mariadb(timestamp: str,
                                 timepoint: str, 
@@ -228,6 +235,7 @@ async def aquagar_predict_mariadb(timestamp: str,
     # Perform pathogen prediction on all the agars
     modelColonies = YOLO('models/micro_colony_counting.pt')
     pred_on_all_agars = []
+    pred_images = []
     for box in allBoxesSorted:
         agarCrop = input_image.crop((box[0], box[1], box[2], box[3]))
         #agarCrop = input_image[box[1]:box[3], box[0]:box[2]]
@@ -235,6 +243,7 @@ async def aquagar_predict_mariadb(timestamp: str,
          # Colonies prediction on agarCrop
         path_dict = get_path_dict(results)        # Get count of each pathogen type
         pred_on_all_agars.append(path_dict)       # Append global list
+        pred_images.append(results[0].plot())
 
     if len(pred_on_all_agars)==6:
         # The official column order for agars is: TCBS - MSA - BA
@@ -287,9 +296,35 @@ async def aquagar_predict_mariadb(timestamp: str,
     finally:
         db_connection.close()
 
-    # Would be nice to print the response
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    # Create a figure with 2 rows and 3 columns
+    fig, axarr = plt.subplots(2, 3)
+
+    # Display each image in its corresponding subplot
+    axarr[0, 0].imshow(pred_images[0])
+    axarr[0, 1].imshow(pred_images[1])
+    axarr[0, 2].imshow(pred_images[2])
+    axarr[1, 0].imshow(pred_images[3])
+    axarr[1, 1].imshow(pred_images[4])
+    axarr[1, 2].imshow(pred_images[5])
+
+
+    # Remove axis ticks and labels for better visualization
+    for ax in axarr.flat:
+        ax.axis('off')
+
+    # Adjust layout to prevent clipping of the subplot titles
+    plt.tight_layout()
+
+    # Render the figure to a numpy array
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    combined_image = np.array(canvas.renderer.buffer_rgba())
+
     import cv2
-    img_pred = Image.fromarray(cv2.cvtColor(modelColonies(input_image)[0].plot(), cv2.COLOR_BGR2RGB))
+    img_pred = Image.fromarray(cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB))
     return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
 @app.get("/get_machine_predictions")
