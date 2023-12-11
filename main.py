@@ -199,11 +199,73 @@ def img_object_detection_to_img(file: bytes = File(...)):
     return StreamingResponse(content=get_bytes_from_image(final_image), media_type="image/jpeg")
 
 
-@app.post('/tests')
-async def tests(file: bytes = File(...)):
+@app.post('/aquagar_predict')
+async def aquagar_predict(file: bytes = File(...)):
+                        
     # Get image from bytes
     input_image = get_image_from_bytes(file)
-    return StreamingResponse(content=get_bytes_from_image(input_image), media_type="image/jpeg")
+
+    # Get plate_id from the picture!
+    plate_id = get_plateid_from_image(input_image, expected_digits=4)
+    print(plate_id)
+
+    # Locate each agar (to crop later and perform pathogen prediction on each crop!)
+    modelAgarsWells = YOLO('models/model_agars_wells.pt')
+
+    resultsAgars = modelAgarsWells(input_image)[0]
+    allBoxes = resultsAgars.boxes.xyxy.numpy().astype(int)
+
+    agarsPositions = get_positions(allBoxes[:, 0:2], 2, 3)
+    # Sort the array first by the last column (index 3), then by the one before column (index 2)
+    sorted_indices = np.lexsort((agarsPositions[:, 3], agarsPositions[:, 2]))
+    # Here sorting is top-down, and left-right, so like:
+    # 1 2 3
+    # 4 5 6 
+    allBoxesSorted = allBoxes[sorted_indices]
+
+    # Perform pathogen prediction on all the agars
+    modelColonies = YOLO('models/micro_colony_counting.pt')
+    pred_on_all_agars = []
+    pred_images = []
+    for box in allBoxesSorted:
+        agarCrop = input_image.crop((box[0], box[1], box[2], box[3]))
+        #agarCrop = input_image[box[1]:box[3], box[0]:box[2]]
+        results = modelColonies.predict(agarCrop, conf = .5)
+         # Colonies prediction on agarCrop
+        path_dict = get_path_dict(results)        # Get count of each pathogen type
+        pred_on_all_agars.append(path_dict)       # Append global list
+        pred_images.append(results[0].plot())
+    
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    # Create a figure with 2 rows and 3 columns
+    fig, axarr = plt.subplots(2, 3)
+
+    # Display each image in its corresponding subplot
+    axarr[0, 0].imshow(pred_images[0])
+    axarr[0, 1].imshow(pred_images[1])
+    axarr[0, 2].imshow(pred_images[2])
+    axarr[1, 0].imshow(pred_images[3])
+    axarr[1, 1].imshow(pred_images[4])
+    axarr[1, 2].imshow(pred_images[5])
+
+
+    # Remove axis ticks and labels for better visualization
+    for ax in axarr.flat:
+        ax.axis('off')
+
+    # Adjust layout to prevent clipping of the subplot titles
+    plt.tight_layout()
+
+    # Render the figure to a numpy array
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    combined_image = np.array(canvas.renderer.buffer_rgba())
+
+    import cv2
+    img_pred = Image.fromarray(cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB))
+    return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
 @app.post('/aquagar_predict_mariadb')
 async def aquagar_predict_mariadb(timestamp: str,
@@ -327,7 +389,7 @@ async def aquagar_predict_mariadb(timestamp: str,
     img_pred = Image.fromarray(cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB))
     return StreamingResponse(content=get_bytes_from_image(img_pred), media_type="image/jpeg")
 
-@app.get("/get_machine_predictions")
+@app.get("/get_machine_predictions.old")
 async def get_machine_predictions(id_maquina: str = Query(..., description="Select a machine_id", enum = ['1','2','3']),
                                   range: str = Query('1', description = "Select a range in days", enum = ['1', '7', '30']),
                                   ):
@@ -353,6 +415,49 @@ async def get_machine_predictions(id_maquina: str = Query(..., description="Sele
     try:
         # Query the full table with the specified range
         query = f"SELECT * FROM aquagar WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY) AND id_maquina = {id_maquina};"
+
+        cursor.execute(query)
+
+        # Fetch all rows
+        data = cursor.fetchall()
+        cursor.close()
+
+        return data
+
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+
+    finally:
+        db_connection.close()
+
+
+@app.get("/get_machine_predictions")
+async def get_machine_predictions(serial_num: str = Query(..., description="Select a machine serial", enum = ['AA-202310-001','AA-202310-002','AA-202310-003']),
+                                  range: str = Query('1', description = "Select a range in days", enum = ['1', '7', '30']),
+                                  ):
+    import mysql.connector
+
+    # Replace with your MySQL connection details
+    host =  '10.8.0.1'
+    username = 'pere'
+    password = 'Nemomola5'
+    database_name =  'KOAPredictions'
+
+    # Create a connection to the MySQL server
+    db_connection = mysql.connector.connect(
+        host=host,
+        user=username,
+        password=password,
+        database=database_name
+    )
+
+    # Create a cursor to execute SQL commands
+    cursor = db_connection.cursor(dictionary=True)
+
+    try:
+        # Query the full table with the specified range
+        serial_num = "'" + serial_num + "'"
+        query = f"SELECT * FROM aquagar WHERE STR_TO_DATE(TIME_STAMP, '%Y-%m-%d %H:%i:%s') >= DATE_SUB(CURDATE(), INTERVAL {range} DAY) AND SERIAL_NUM = {serial_num};"
 
         cursor.execute(query)
 
